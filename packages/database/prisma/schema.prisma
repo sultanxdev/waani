@@ -1,0 +1,163 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id           String        @id @default(cuid())
+  name         String
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  users        User[]
+  apiKeys      ApiKey[]
+  agents       Agent[]
+  phoneNumbers PhoneNumber[]
+  calls        Call[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  email          String       @unique
+  name           String
+  passwordHash   String       @map("password_hash")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+model ApiKey {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  name           String
+  keyHash        String       @unique @map("key_hash")
+  keyPrefix      String       @map("key_prefix")
+  lastUsedAt     DateTime?    @map("last_used_at")
+  revokedAt      DateTime?    @map("revoked_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([keyHash])
+  @@map("api_keys")
+}
+
+model Agent {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  name           String
+  instructions   String       @db.Text
+  language       String       @default("hi-IN")
+  greeting       String?      @db.Text
+  llmProvider    String       @default("gemini") @map("llm_provider")
+  llmModel       String       @default("gemini-2.5-flash") @map("llm_model")
+  sttProvider    String       @default("sarvam") @map("stt_provider")
+  ttsProvider    String       @default("sarvam") @map("tts_provider")
+  voiceId        String?      @map("voice_id")
+  status         String       @default("active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  calls          Call[]
+  phoneNumbers   PhoneNumber[]
+
+  @@index([organizationId])
+  @@map("agents")
+}
+
+model PhoneNumber {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  phoneNumber    String       @unique @map("phone_number")
+  provider       String       @default("exotel")
+  providerId     String?      @map("provider_id")
+  agentId        String?      @map("agent_id")
+  status         String       @default("active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent          Agent?       @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  calls          Call[]
+
+  @@index([organizationId])
+  @@index([phoneNumber])
+  @@map("phone_numbers")
+}
+
+model Call {
+  id              String        @id @default(cuid())
+  organizationId  String        @map("organization_id")
+  agentId         String        @map("agent_id")
+  phoneNumberId   String?       @map("phone_number_id")
+
+  direction       String        @default("outbound") // "inbound" | "outbound"
+  fromNumber      String        @map("from_number")
+  toNumber        String        @map("to_number")
+
+  status          String        @default("created") // created, queued, ringing, answered, connected, in_progress, completed, failed, no_answer, busy, cancelled
+
+  startedAt       DateTime?     @map("started_at")
+  answeredAt      DateTime?     @map("answered_at")
+  endedAt         DateTime?     @map("ended_at")
+
+  durationSeconds Int?          @map("duration_seconds")
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent           Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  phoneNumber     PhoneNumber?  @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+  turns           CallTurn[]
+  events          CallEvent[]
+
+  @@index([organizationId])
+  @@index([agentId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("calls")
+}
+
+model CallTurn {
+  id         String    @id @default(cuid())
+  callId     String    @map("call_id")
+  sequence   Int
+  speaker    String    // "user" | "assistant"
+  text       String    @db.Text
+  startedAt  DateTime  @default(now()) @map("started_at")
+  endedAt    DateTime? @map("ended_at")
+  latencyMs  Int?      @map("latency_ms")
+
+  call       Call      @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId])
+  @@index([sequence])
+  @@map("call_turns")
+}
+
+model CallEvent {
+  id        String   @id @default(cuid())
+  callId    String   @map("call_id")
+  eventName String   @map("event_name")
+  payload   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  call      Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId])
+  @@index([eventName])
+  @@map("call_events")
+}
